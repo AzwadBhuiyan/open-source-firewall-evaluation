@@ -1,174 +1,234 @@
 # Investigation and Evaluation of Open-Source Web Application Firewalls
 
-**Project Scale:** `20,000+ Payloads Tested` | `4 Attack Categories` | `Custom Python Automation` | `Multi-OS Virtual Lab (Kali, Ubuntu, Windows)`
+A web application firewall (WAF) raising an alert does not mean it stopped the attack. This project measures that gap. We tested **ModSecurity** (with the OWASP Core Rule Set) and **NAXSI** against more than 20,000 attack payloads in an isolated lab. For every request we recorded whether the firewall blocked it, logged it but let it through, or missed it.
 
-This repository contains the custom testing scripts, curated attack payload lists, raw CSV log results, and virtual lab documentation for our capstone investigation into open-source Web Application Firewalls (WAFs).
+Curtin University | COMP6016 Capstone Project | Group 6
 
-The goal of this project is to test, compare, and evaluate how effectively free, open-source web firewalls—specifically **ModSecurity** and **NAXSI** (with **Coraza** in the extended scope)—detect and block real-world web attacks when configured with industry-standard security rules.
+**Full results and analysis:** [Final Comparative Evaluation Report (PDF)](./docs/Final_WAF_Comparison_Report.pdf). This README covers the headline results, how the testing was done, and how to reproduce it.
 
-> 📄 **Final Comparative Report:** This README covers the project background, virtual lab setup, and testing methodology. For the complete cross-firewall data analysis, findings, and final recommendations, see the **[Report (PDF)](./docs/Final_WAF_Comparison_Report.pdf)** *(uploaded upon completion of all test stages)*.
+## At a glance
 
----
+- **Firewalls tested:** ModSecurity with the OWASP Core Rule Set (CRS) and NAXSI, with Coraza as an extended comparison
+- **Attack classes:** SQL injection, cross-site scripting (XSS, reflected and stored), path traversal, XML external entity (XXE) injection
+- **Scale:** 20,000+ payloads from public collections, each sent as its own request
+- **Recorded per request:** HTTP status, latency, whether any rule fired, whether the request was blocked, and the rule IDs involved
+- **Lab:** isolated host-only network with a Kali Linux attacker and Ubuntu, Windows Server and Windows 11 targets running DVWA (a deliberately vulnerable practice web application)
+- **Tools and skills:** Python, Bash, cURL, Linux, Apache, Nginx, ModSecurity, OWASP CRS, NAXSI, log analysis, Git, Jira
 
-## 1. Background & Key Concepts (Plain-English Overview)
+## Key findings
 
-To make this project clear to readers from outside cybersecurity—including recruiters, hiring managers, and academic assessors—this section explains the core concepts behind our work:
+1. **An alert is not a block.** ModSecurity with the CRS raised an alert on all 7,229 SQL injection payloads but blocked only 3,609 of them (49.92%). The other 3,620 received HTTP 200 and reached the application. Counting alerts gives 100%. Counting blocks gives 49.92%.
+2. **XSS was fully blocked.** All 10,000 XSS payloads (5,000 reflected through GET and 5,000 stored through POST) were rejected with HTTP 403.
+3. **ModSecurity compared with NAXSI.** TODO: one or two sentences with your main comparison result and the numbers behind it.
 
-### What is a Web Application Firewall (WAF)?
-Standard network firewalls protect computers from unauthorized network connections, but they must allow normal web traffic (HTTP/HTTPS) through so people can visit websites. A **Web Application Firewall (WAF)** sits directly in front of a website and inspects every incoming request—such as a user logging in, typing into a search bar, or uploading a file. If the WAF detects malicious code hidden inside a request, it blocks the traffic before it can reach the website or database.
+## My contribution
 
-### What are the OWASP Top 10 and the Core Rule Set (CRS)?
-* **OWASP Top 10:** Maintained by the Open Worldwide Application Security Project (OWASP), this is the globally recognized standard listing the ten most critical security risks facing web applications today.
-* **OWASP Core Rule Set (CRS):** A firewall engine by itself does not know what an attack looks like until it is given rules. The **Core Rule Set** is an open-source rulebook plugged into firewalls like ModSecurity. It provides hundreds of detection patterns built to catch OWASP Top 10 attacks.
+This was a team project. My part:
 
-### How Firewall Scoring, Logs, and Results Work
-When we send thousands of test attacks at a firewall, several different outcomes can happen. Understanding these terms is essential to reading our CSV results and logs:
-* **Blocked Request (`HTTP 403 Forbidden`):** The firewall recognized the request as an attack and stopped it immediately. The payload never reached the website.
-* **Allowed Request (`HTTP 200 OK`):** The request passed through the firewall and reached the website.
-* **Detected / Alerted, But Still Allowed:** Firewalls using the OWASP Core Rule Set rely on **anomaly scoring**. Instead of blocking a request the moment it looks slightly unusual, each triggered rule adds points to a threat score (the default blocking threshold is **5**). If a sneaky attack only triggers a low-severity rule worth 2 or 3 points, the firewall writes a warning in its **Alert Log** (`Detected = Yes`), but still lets the request pass through to the website (`Blocked = No`).
-* **False Negative (Bypass):** A real attack that slips past the firewall without being blocked—either because no rule matched it, or because its threat score stayed below the blocking threshold.
-* **False Positive:** When a normal, harmless user request (for example, someone with an apostrophe in their last name like *O'Connor*) accidentally triggers a firewall rule and gets blocked by mistake.
+- TODO: what you built or ran (for example the test runner for one attack class, the log parser, or the lab setup)
+- TODO: the results or analysis you were responsible for
+- TODO: one technical problem you diagnosed or decision you made
 
----
+<details>
+<summary><strong>New to WAFs? A short primer on the terms used here</strong></summary>
 
-## 2. Why We Switched from Automated Scanners to Custom Scripts
+**Payload.** The malicious input sent in a request, for example database commands typed into a login field.
 
-In the first phase of our project (COMP6015), we tested the firewalls using automated vulnerability scanners like **OWASP ZAP**, **Nikto**, and **SQLmap** (archived in the `ZAP_Attack_Logs/` folder). 
+**Web application firewall (WAF).** A traditional network firewall decides by IP address and port. A WAF reads the content of web requests (form fields, URL parameters, headers) and drops the ones that look like attacks before the application processes them.
 
-While automated scanners are fast, they fire thousands of unorganized requests at once. That made it difficult to see which specific payload triggered which firewall rule, and often overloaded the virtual machines.
+**OWASP Top 10 and the Core Rule Set (CRS).** The Open Worldwide Application Security Project (OWASP) publishes a widely used ranking of the most serious web application risks, such as injection flaws and broken access control. ModSecurity is an inspection engine and needs rules to work. The CRS is a free rule set for it that targets those risks.
 
-To make our testing rigorous, repeatable, and clear, we built a custom scripted pipeline:
-1. **Single-Request Python Scripts:** We wrote custom Python scripts that load attack payloads from text files and send **one request at a time** to the target web application.
-2. **Curated Real-World Payloads:** Our payload lists were gathered and refined from respected security resources, including the **PortSwigger Web Security Academy**, **SecLists**, **PayloadsAllTheThings**, **DirBuster (`directory-list-2.3-big.txt`)**, **Assetnote**, **GitHub `payload-box`**, and **Xfeed**.
-3. **Automated Log Correlation:** For every single request sent, our Python script records the exact payload, the HTTP status code returned (`200` vs `403`), the server response time in milliseconds, and the exact firewall rule IDs triggered in the backend logs, saving the output directly to a structured CSV file.
+**How a request is scored.** With the CRS, each matching rule adds penalty points: Critical 5, Error 4, Warning 3, Notice 2. A request is blocked only when its total reaches the blocking threshold, which defaults to 5. A request that matches only low-scoring rules is logged but still goes through.
 
----
+**Outcomes used in this project**
 
-## 3. Attack Categories Tested
+- **Blocked:** the firewall rejected the request (HTTP 403 Forbidden). It never reached the application.
+- **Allowed:** the request passed through and the application processed it (HTTP 200 OK).
+- **Alerted but allowed:** at least one rule fired, but the score stayed below the blocking threshold.
+- **False negative (bypass):** an attack request that reached the application.
+- **False positive:** a legitimate request that was wrongly blocked.
 
-Each firewall is evaluated against four major web attack types:
+</details>
 
-* **SQL Injection (SQLi):** Sending malicious database commands through input fields to bypass login screens or extract private data from the backend database.
-* **Cross-Site Scripting (XSS):** Injecting malicious JavaScript code into web pages to steal session tokens or hijack user browsers. We tested both **Reflected XSS** (`GET` requests via URL parameters) and **Stored XSS** (`POST` requests saved into the application database).
-* **Path Traversal (Directory Traversal):** Manipulating file paths (such as `../../../../etc/passwd`) to break out of the web server folder and read restricted operating system files.
-* **XML External Entity (XXE):** Sending crafted XML payloads to trick the application parser into exposing local server files or interacting with internal network services.
+## Results
 
----
+### Across all attack classes
 
-## 4. Virtual Lab Architecture
+| Attack class | Payloads | ModSecurity + CRS: blocked | NAXSI: blocked |
+|---|---:|---|---|
+| SQL injection | 7,229 | 3,609 (49.92%) | TODO |
+| XSS, reflected (GET) | 5,000 | 5,000 (100%) | TODO |
+| XSS, stored (POST) | 5,000 | 5,000 (100%) | TODO |
+| Path traversal | TODO | TODO | TODO |
+| XXE | TODO | TODO | TODO |
 
-All testing was conducted inside an isolated virtual network so that no external systems or live networks were affected:
+"Blocked" means the request received HTTP 403. Per-request data for every cell is in the `results/` folder of each attack class. Graphs, rule-level log analysis and the full cross-firewall comparison are in the [report](./docs/Final_WAF_Comparison_Report.pdf).
 
-```text
-[ Attacker VM: Kali Linux ]
-   │  (Runs custom Python scripts & curated payload files)
-   ▼
-   │  Sends 1 HTTP Request at a time
-   ▼
-[ Open-Source WAF: ModSecurity (OWASP CRS) / NAXSI ]
-   │
-   ├──► Blocked (HTTP 403) ──► Recorded in WAF Alert Log (Attack stopped)
-   │
-   └──► Allowed (HTTP 200) ──► Reaches [ Target Web App: DVWA ]
-                                  └──► Recorded in Web Server Access Log & WAF Log
+<!-- OPTIONAL: save a bar chart of blocked vs allowed per attack class and firewall as docs/images/results.png, then add it here with ![Block rate by attack class](./docs/images/results.png) -->
+
+### SQL injection: ModSecurity with the OWASP CRS
+
+| Measure | Requests | Share |
+|---|---:|---:|
+| Payloads sent | 7,229 | 100% |
+| At least one rule fired (alert) | 7,229 | 100.00% |
+| Blocked (HTTP 403) | 3,609 | 49.92% |
+| Allowed (HTTP 200) | 3,620 | 50.08% |
+
+Every request triggered at least one rule, yet half of them were allowed. Many of the allowed payloads matched only low-severity rules (protocol warnings or partial matches), so their combined anomaly score stayed under the blocking threshold of 5. These are the cases where the firewall logs an attack and still lets it through. We report alerts and blocks separately throughout for this reason.
+
+### XSS: ModSecurity with the OWASP CRS
+
+| Variant | Payloads | Blocked |
+|---|---:|---:|
+| Reflected (GET) | 5,000 | 5,000 (100%) |
+| Stored (POST) | 5,000 | 5,000 (100%) |
+
+The CRS XSS rules (the 941xxx family) blocked every payload in the set, including script tags, event-handler injections and obfuscated variants. A perfect score on a public payload list shows strong coverage of known XSS patterns. It does not show that the firewall stops all XSS (see [Limitations](#limitations)).
+
+## How the testing was done
+
+### Why custom scripts instead of vulnerability scanners
+
+In an earlier unit (COMP6015) we generated attack traffic with OWASP ZAP, Nikto and sqlmap. Those logs are kept in `ZAP_Attack_Logs/`. Scanners are good for broad coverage but poor for benchmarking:
+
+- They send bursts of simultaneous requests, so a log entry cannot be tied to the payload that caused it.
+- They can saturate the virtual machine's network interface, and a dropped connection then looks like a firewall block.
+- They do not let you test individual payloads or hand-made evasion variants.
+
+For the capstone we replaced them with single-request scripts in Python, Bash and cURL. Sending one payload at a time makes every result traceable and repeatable.
+
+### Test pipeline
+
+```mermaid
+flowchart TD
+    A["Payload list (.txt)"] --> B["Python runner: one request at a time"]
+    B --> C{"WAF under test"}
+    C -->|"HTTP 403"| D["Blocked at the firewall"]
+    C -->|"HTTP 200"| E["Allowed, reaches DVWA"]
+    C -.->|"writes"| F["WAF alert log: rule IDs, anomaly score"]
+    D --> G["Runner records status code and latency"]
+    E --> G
+    F --> H["Runner matches WAF log and web server access log to the payload"]
+    G --> I[("CSV results file")]
+    H --> I
 ```
 
-### Virtual Machines (`OVA_Files/`)
-* **Offensive Machine:** Kali Linux OVA (used by all team members to run identical Python scripts and payload lists).
-* **Victim / Target Machines:** 
-  * **Ubuntu Server** (Primary target hosting Apache/Nginx, the WAFs, and DVWA).
-  * **Windows Server & Windows 11 Client** (Secondary target environments configured with DVWA and WAF instances for cross-platform testing).
-* **Target Web Application:** **DVWA (Damn Vulnerable Web Application)**—an intentionally vulnerable web application designed for controlled security testing.
+### Payload sources
 
----
+- PortSwigger Web Security Academy (cheat sheets and manual testing techniques)
+- SecLists
+- PayloadsAllTheThings and payload-box (GitHub)
+- DirBuster (`directory-list-2.3-big.txt`)
+- Assetnote wordlists and Xfeed
 
-## 5. Repository Structure
+### Attack classes tested
+
+| Attack class | What it targets | Variants tested | OWASP Top 10 (2021) |
+|---|---|---|---|
+| SQL injection | Database queries built from user input | UNION-based extraction, boolean-based blind, time-based delays (`SLEEP()`, `BENCHMARK()`), authentication bypass | A03 Injection |
+| Cross-site scripting | Scripts injected into pages other users view | Reflected through URL parameters (GET), stored through a message form (POST); obfuscated tags, event handlers, JavaScript sinks | A03 Injection |
+| Path traversal | Files outside the web root | `../` sequences, URL-encoded (`%2e%2e%2f`), null-byte injection, nested encodings | A01 Broken Access Control |
+| XXE | XML parsers that resolve external entities | External entity definitions used to read local files and trigger server-side request forgery (SSRF) | A05 Security Misconfiguration |
+
+## Lab and configuration
+
+### Environment
+
+All machines sit on an isolated host-only network (`192.168.x.x/24`), so no test traffic left the lab.
+
+| Role | System | Purpose |
+|---|---|---|
+| Attacker | Kali Linux VM (shared OVA image) | Runs the Python scripts, cURL commands and payload lists. Every team member used the same image, so tests ran under identical conditions. |
+| Primary target | Ubuntu Server | DVWA on Apache 2.4 and Nginx, with ModSecurity and NAXSI integrated |
+| Secondary targets | Windows Server, Windows 11 | DVWA, used to compare WAF behaviour and rule portability across operating systems |
+
+DVWA was run at its Low, Medium and High security levels. TODO: state which level the headline numbers came from, and name the DVWA module or custom endpoint used for each attack class (DVWA has no built-in XXE module).
+
+### Firewalls and configuration tested
+
+| Firewall | What it is | Configuration tested |
+|---|---|---|
+| ModSecurity + OWASP CRS | Open-source WAF engine paired with the Core Rule Set, a large public rulebook for OWASP Top 10 attacks | Blocking threshold 5 (CRS default). TODO: ModSecurity version, CRS version, paranoia level, web server |
+| NAXSI | WAF module for Nginx with a small core rule set. It scores suspicious characters and patterns and blocks when a set threshold is crossed. Usually tuned per application with whitelist rules | TODO: NAXSI and Nginx versions, block threshold, learning mode on or off, any whitelist rules |
+| Coraza | WAF engine written in Go that can run the OWASP CRS | TODO: what was tested and where the results are |
+
+## Repository layout
 
 ```text
 open-source-firewall-evaluation/
-├── modsecurity/                # ModSecurity + OWASP Core Rule Set test suites
-│   ├── SQLi/                   # SQL Injection payloads, Python runner, CSV results, notes
-│   ├── XSS/                    # Reflected & Stored XSS payloads, script, CSV results, notes
-│   ├── Path_traversal/         # Directory traversal wordlists, script, CSV results, notes
-│   └── XML_attack_XXE/         # XXE payloads, Python script, CSV results, notes
-│
-├── naxsi/                      # Identical attack suites executed against the NAXSI firewall
+├── modsecurity/            # ModSecurity + OWASP CRS test suites
+│   ├── SQLi/
+│   ├── XSS/                # reflected (GET) and stored (POST)
+│   ├── Path_traversal/
+│   └── XML_attack_XXE/
+├── naxsi/                  # the same four suites run against NAXSI
 │   ├── SQLi/
 │   ├── XSS/
 │   ├── Path_traversal/
 │   └── XML_attack_XXE/
-│
-├── ZAP_Attack_Logs/            # Baseline logs from earlier automated scanner testing (ZAP)
-├── OVA_Files/                  # VM specifications, setup guide, and external image links
-├── docs/                       # Project reports and Final Comparative Evaluation PDF
-├── requirements.txt            # Python libraries required to run the testing scripts
+├── ZAP_Attack_Logs/        # earlier scanner-based test logs (OWASP ZAP)
+├── OVA_Files/              # setup guide for the lab virtual machines
+├── docs/                   # scoping, progress reports, final comparison report (PDF)
+├── requirements.txt        # Python dependencies
 └── README.md
 ```
 
-Inside each attack directory (e.g., `modsecurity/SQLi/` or `naxsi/XSS/`), you will find:
-* **`payloads/`** — Text files containing the attack strings sent during testing.
-* **`results/`** — Raw CSV files containing per-request outcomes, response times, and matched firewall rules.
-* **`*.py`** — The custom Python automation script used to execute the payloads and parse the logs.
-* **`*.docx` / `*.md`** — Documentation covering the test setup, observations, and analysis for that attack type.
+Each attack folder contains:
 
----
+- `payloads/`: plain text files of the attack strings tested
+- `results/`: CSV output, one row per request
+- `*.py`: the Python test runner for that attack class
+- `*.docx` / `*.md`: technical notes on configuration, attack logic and findings
 
-## 6. Sample Baseline Findings (ModSecurity + OWASP CRS)
+## Run it yourself
 
-Below is a snapshot of our baseline results on ModSecurity before comparing against NAXSI:
+Requirements: Python 3.10 or later, and a lab target with a WAF in front of DVWA. The virtual machine images are too large for GitHub and are not in this repo. `OVA_Files/README.md` has the setup steps and download links.
 
-### SQL Injection Benchmark (7,229 Payloads)
-| Metric | Count | Rate | Plain-English Meaning |
-| :--- | :--- | :--- | :--- |
-| **Total Requests Sent** | 7,229 | 100.00% | All scheduled SQLi payloads completed without script errors |
-| **Rule Alerts Logged** | 7,229 | 100.00% | Every request triggered at least one ModSecurity log entry |
-| **Blocked (`HTTP 403`)** | 3,609 | 49.92% | Roughly half of the attacks were stopped by the firewall |
-| **Detected but Allowed (`HTTP 200`)** | 3,620 | 50.08% | Triggered low-score rules, but stayed below the block threshold |
-
-### Cross-Site Scripting (XSS) Benchmark (10,000 Payloads)
-| Metric | Reflected XSS (`GET`) | Stored XSS (`POST`) | Combined Total |
-| :--- | :--- | :--- | :--- |
-| **Total Requests Sent** | 5,000 | 5,000 | 10,000 |
-| **Rule Alerts Logged** | 5,000 (100%) | 5,000 (100%) | 10,000 (100.00%) |
-| **Blocked (`HTTP 403`)** | 5,000 (100%) | 5,000 (100%) | 10,000 (100.00%) |
-| **Allowed (`HTTP 200`)** | 0 (0%) | 0 (0%) | 0 (0.00%) |
-
-* **Key Takeaway:** Under default OWASP CRS settings, ModSecurity blocked 100% of XSS payloads (via the `941xxx` rule group), whereas 50.08% of SQLi requests passed through because their anomaly scores did not reach the default blocking threshold. Full comparisons with NAXSI and Path Traversal / XXE results are detailed in the individual folders and final report.
-
----
-
-## 7. How to Run the Scripts & Read the Results
-
-### 1. Clone the repository and install dependencies
 ```bash
-git clone [https://github.com/](https://github.com/)<your-username>/open-source-firewall-evaluation.git
+git clone https://github.com/<your-username>/open-source-firewall-evaluation.git
 cd open-source-firewall-evaluation
 pip install -r requirements.txt
-```
 
-### 2. Run an attack test script
-Make sure your target VM is running and reachable on the isolated lab network, then run the Python script inside the desired attack folder:
-```bash
 cd modsecurity/SQLi/
 python3 run_sqli.py
 ```
-*(Note: Our Python scripts write results to disk after every single request so no data is lost if a virtual machine connection drops during multi-thousand-payload runs.)*
 
-### 3. Understanding the CSV Columns
-Each output file in `results/` records the following columns:
-* `request_id` / `payload_id`: Unique ID tracking the test number.
-* `payload`: The exact attack string sent to DVWA.
-* `http_status`: `403` (Blocked by WAF) or `200` (Allowed through to DVWA).
-* `waf_detected`: `Yes` if any WAF rule was logged during the request.
-* `waf_blocked`: `Yes` if the WAF actively dropped/blocked the request.
-* `time_ms`: Round-trip response time in milliseconds.
-* `rules`: The exact rule IDs and descriptions triggered (e.g., `942100: SQL Injection Attack Detected via libinjection`).
+Update the target address in the script to match your lab before running. Each run writes a CSV file to the attack class's `results/` folder.
 
----
+### Output columns
 
-## 8. Project Governance & Academic Details
+| Column | Meaning | Example |
+|---|---|---|
+| `request_id` | Sequential ID for each request | `REQ-0004` |
+| `payload` | Exact attack string sent | `445 UNION ALL SELECT NULL, NULL...` |
+| `http_status` | Response code from the server | `403` (blocked) or `200` (allowed) |
+| `waf_detected` | Whether any WAF rule fired | `Yes` |
+| `waf_blocked` | Whether the request was dropped | `Yes` |
+| `time_ms` | Round-trip time in milliseconds | `9.62` |
+| `rules` | Rule IDs and descriptions that fired | `942100: SQL Injection Attack Detected...` |
 
-* **Unit:** COMP6016 Capstone Project — Curtin University
-* **Supervisor:** Mihai Lazarescu
-* **Group:** Group 6
-* **Project Management:** Managed using **Jira** (Scrum/Kanban boards) for sprint planning and task tracking, and **GitHub** for version control and dataset sharing.
+## Limitations
+
+- **Blocked or allowed is a request-level result.** An HTTP 200 shows a payload got past the firewall. It does not show the payload would have worked against DVWA. Public payload lists include strings written for other database engines or contexts, so the allowed count can overstate real bypasses.
+- **Known payloads only.** Every payload comes from a public collection that rule authors also read. A 100% block rate on a list means strong coverage of known strings, not protection against new evasion techniques.
+- **Results depend on configuration.** The numbers apply to the versions, rule sets and thresholds listed above. A different paranoia level, threshold or whitelist would change them.
+- **No false-positive testing.** This work measures how attacks are handled. It does not measure how often legitimate traffic is wrongly blocked, which is the other half of judging a WAF.
+- **Small, deliberately vulnerable target.** DVWA is a lab application. Real applications produce more varied traffic, and single sequential requests do not test behaviour under concurrent load.
+
+## About this project
+
+- **Unit:** COMP6016 Capstone Project, Curtin University
+- **Supervisor:** Mihai Lazarescu
+- **Group:** Group 6
+- **Workflow:** GitHub for version control, scripts and datasets; Jira for sprint backlogs, user stories and task tracking
+
+### Responsible use
+
+The scripts and payload sets in this repository are for authorised testing in controlled environments. All testing here ran on an isolated host-only network against deliberately vulnerable software. Do not run them against systems you do not own or have written permission to test.
+
+Created for academic research and education within the COMP6016 Capstone Project at Curtin University. All rights reserved.
+
+### Contact
+
+TODO: your name, LinkedIn link and email.
