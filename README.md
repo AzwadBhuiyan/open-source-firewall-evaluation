@@ -4,7 +4,7 @@ A web application firewall (WAF) raising an alert does not mean it stopped the a
 
 Curtin University | COMP6016 Capstone Project | Group 6
 
-**Full results and analysis:** [Final Comparative Evaluation Report (PDF)](./docs/Final_WAF_Comparison_Report.pdf). This README covers the headline results, how the testing was done, and how to reproduce it.
+**Full results and analysis:** [Report (PDF)](./docs/Final_WAF_Comparison_Report.pdf). This README covers the headline results, how the testing was done, and how to reproduce it.
 
 ## At a glance
 
@@ -229,6 +229,3 @@ The scripts and payload sets in this repository are for authorised testing in co
 
 Created for academic research and education within the COMP6016 Capstone Project at Curtin University. All rights reserved.
 
-### Contact
-
-TODO: your name, LinkedIn link and email.
