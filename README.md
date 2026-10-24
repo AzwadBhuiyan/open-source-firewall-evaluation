@@ -8,7 +8,7 @@ Curtin University | COMP6016 Capstone Project | Group 6
 
 ## At a glance
 
-- **Firewalls tested:** ModSecurity with the OWASP Core Rule Set (CRS) and NAXSI, with Coraza as an extended comparison
+- **Firewalls tested:** ModSecurity with the OWASP Core Rule Set (CRS) and NAXSI
 - **Attack classes:** SQL injection, cross-site scripting (XSS, reflected and stored), path traversal, XML external entity (XXE) injection
 - **Scale:** 20,000+ payloads from public collections, each sent as its own request
 - **Recorded per request:** HTTP status, latency, whether any rule fired, whether the request was blocked, and the rule IDs involved
@@ -151,22 +151,23 @@ DVWA was run at its Low, Medium and High security levels. TODO: state which leve
 |---|---|---|
 | ModSecurity + OWASP CRS | Open-source WAF engine paired with the Core Rule Set, a large public rulebook for OWASP Top 10 attacks | Blocking threshold 5 (CRS default). TODO: ModSecurity version, CRS version, paranoia level, web server |
 | NAXSI | WAF module for Nginx with a small core rule set. It scores suspicious characters and patterns and blocks when a set threshold is crossed. Usually tuned per application with whitelist rules | TODO: NAXSI and Nginx versions, block threshold, learning mode on or off, any whitelist rules |
-| Coraza | WAF engine written in Go that can run the OWASP CRS | TODO: what was tested and where the results are |
 
 ## Repository layout
 
 ```text
 open-source-firewall-evaluation/
-├── modsecurity/            # ModSecurity + OWASP CRS test suites
+├── Modsecurity/           # ModSecurity + OWASP CRS test suites
 │   ├── SQLi/
 │   ├── XSS/                # reflected (GET) and stored (POST)
-│   ├── Path_traversal/
-│   └── XML_attack_XXE/
-├── naxsi/                  # the same four suites run against NAXSI
+│   ├── Path Traversal/
+│   ├── XML Attack (XXE)/
+│   └── ZAP Attack Logs/
+├── Naxsi/                  # the same four suites run against NAXSI
 │   ├── SQLi/
 │   ├── XSS/
-│   ├── Path_traversal/
-│   └── XML_attack_XXE/
+│   ├── Path Traversal/
+│   ├── XXE/
+│   └── Final Naxsi/        # final NAXSI runs and overall results
 ├── ZAP_Attack_Logs/        # earlier scanner-based test logs (OWASP ZAP)
 ├── OVA_Files/              # setup guide for the lab virtual machines
 ├── docs/                   # scoping, progress reports, final comparison report (PDF)
@@ -190,8 +191,8 @@ git clone https://github.com/<your-username>/open-source-firewall-evaluation.git
 cd open-source-firewall-evaluation
 pip install -r requirements.txt
 
-cd modsecurity/SQLi/
-python3 run_sqli.py
+cd Modsecurity/SQLi/
+python3 sqli_tester.py
 ```
 
 Update the target address in the script to match your lab before running. Each run writes a CSV file to the attack class's `results/` folder.
